@@ -1,0 +1,732 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>자료실 책장 스캐너</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root {
+    --bg: #f5f6f8;
+    --surface: #ffffff;
+    --primary: #1a3a5c;
+    --accent: #2e7dd1;
+    --accent-light: #e8f1fb;
+    --text: #1e2430;
+    --text-sub: #6b7a8d;
+    --border: #dde2ea;
+    --success: #1a7a4a;
+    --success-bg: #eaf7f0;
+    --error: #c0392b;
+    --error-bg: #fdecea;
+    --radius: 10px;
+    --shadow: 0 2px 12px rgba(30,36,48,0.08);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Malgun Gothic', '맑은 고딕', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+
+  header {
+    background: var(--primary);
+    color: #fff;
+    padding: 20px 32px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  }
+
+  header .icon { font-size: 28px; }
+  header h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.3px; }
+  header p { font-size: 13px; opacity: 0.75; margin-top: 2px; }
+
+  main {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 28px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+
+  .card {
+    background: var(--surface);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 24px;
+  }
+
+  .card-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--primary);
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  /* 업로드 영역 */
+  .upload-zone {
+    border: 2px dashed var(--border);
+    border-radius: var(--radius);
+    padding: 40px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: var(--bg);
+  }
+
+  .upload-zone:hover, .upload-zone.drag-over {
+    border-color: var(--accent);
+    background: var(--accent-light);
+  }
+
+  .upload-zone .upload-icon { font-size: 40px; margin-bottom: 10px; }
+  .upload-zone .upload-text { font-size: 15px; color: var(--text); font-weight: 600; }
+  .upload-zone .upload-sub { font-size: 13px; color: var(--text-sub); margin-top: 4px; }
+
+  #fileInput { display: none; }
+
+  /* 미리보기 */
+  .preview-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 10px;
+    margin-top: 16px;
+  }
+
+  .preview-item {
+    position: relative;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 2px solid var(--border);
+    aspect-ratio: 4/3;
+    background: var(--bg);
+  }
+
+  .preview-item img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .preview-item .remove-btn {
+    position: absolute;
+    top: 4px; right: 4px;
+    background: rgba(0,0,0,0.6);
+    color: #fff;
+    border: none;
+    border-radius: 50%;
+    width: 22px; height: 22px;
+    font-size: 12px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .preview-item .status-badge {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    font-size: 11px;
+    padding: 3px 6px;
+    text-align: center;
+    font-weight: 600;
+  }
+
+  .status-badge.pending { background: rgba(0,0,0,0.5); color: #fff; }
+  .status-badge.processing { background: #f39c12; color: #fff; }
+  .status-badge.done { background: var(--success); color: #fff; }
+  .status-badge.error { background: var(--error); color: #fff; }
+
+  /* 버튼 */
+  .btn-row {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 16px;
+  }
+
+  .btn {
+    padding: 11px 22px;
+    border-radius: 8px;
+    border: none;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: #fff;
+  }
+  .btn-primary:hover:not(:disabled) { background: #1a6ab8; }
+  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .btn-outline {
+    background: transparent;
+    color: var(--accent);
+    border: 2px solid var(--accent);
+  }
+  .btn-outline:hover:not(:disabled) { background: var(--accent-light); }
+  .btn-outline:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .btn-success {
+    background: var(--success);
+    color: #fff;
+  }
+  .btn-success:hover:not(:disabled) { background: #145e38; }
+  .btn-success:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* 진행 상태 */
+  .progress-bar-wrap {
+    background: var(--border);
+    border-radius: 99px;
+    height: 8px;
+    margin-top: 12px;
+    overflow: hidden;
+  }
+
+  .progress-bar {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 99px;
+    transition: width 0.3s;
+  }
+
+  .progress-label {
+    font-size: 13px;
+    color: var(--text-sub);
+    margin-top: 6px;
+  }
+
+  /* 결과 테이블 */
+  .table-wrap {
+    overflow-x: auto;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+
+  thead {
+    background: var(--primary);
+    color: #fff;
+  }
+
+  thead th {
+    padding: 12px 14px;
+    text-align: left;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  tbody tr:nth-child(even) { background: var(--bg); }
+  tbody tr:hover { background: var(--accent-light); }
+
+  tbody td {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+    line-height: 1.5;
+  }
+
+  tbody td input {
+    width: 100%;
+    border: 1px solid transparent;
+    background: transparent;
+    padding: 2px 4px;
+    font-size: 13px;
+    border-radius: 4px;
+    font-family: inherit;
+    color: var(--text);
+  }
+  tbody td input:focus {
+    outline: none;
+    border-color: var(--accent);
+    background: #fff;
+  }
+
+  .no-data {
+    text-align: center;
+    padding: 40px;
+    color: var(--text-sub);
+    font-size: 14px;
+  }
+
+  .summary-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    background: var(--accent-light);
+    border-radius: 8px;
+    font-size: 13px;
+    color: var(--accent);
+    font-weight: 600;
+    margin-bottom: 12px;
+  }
+
+  .add-row-btn {
+    font-size: 12px;
+    padding: 5px 12px;
+    border-radius: 6px;
+    border: 1px dashed var(--accent);
+    background: transparent;
+    color: var(--accent);
+    cursor: pointer;
+  }
+  .add-row-btn:hover { background: var(--accent-light); }
+
+  .del-cell button {
+    background: transparent;
+    border: none;
+    color: #aaa;
+    cursor: pointer;
+    font-size: 14px;
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+  .del-cell button:hover { color: var(--error); background: var(--error-bg); }
+
+  .tag {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 99px;
+    font-size: 11px;
+    font-weight: 700;
+  }
+  .tag-loc { background: #e8f1fb; color: #1a6ab8; }
+
+  /* API 키 카드 */
+  .api-key-row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+  }
+  .api-key-row input {
+    flex: 1;
+    padding: 10px 14px;
+    border: 1.5px solid var(--border);
+    border-radius: 8px;
+    font-size: 14px;
+    font-family: monospace;
+    color: var(--text);
+    transition: border-color 0.2s;
+  }
+  .api-key-row input:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+  .api-key-hint {
+    font-size: 12px;
+    color: var(--text-sub);
+    margin-top: 8px;
+    line-height: 1.6;
+  }
+  .api-key-hint a { color: var(--accent); }
+  .key-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 99px;
+    white-space: nowrap;
+  }
+  .key-status.ok { background: var(--success-bg); color: var(--success); }
+  .key-status.none { background: #fff3cd; color: #856404; }
+
+  /* 반응형 */
+  @media (max-width: 600px) {
+    header { padding: 16px; }
+    .card { padding: 16px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="icon">📚</div>
+  <div>
+    <h1>자료실 책장 스캐너</h1>
+    <p>사진을 올리면 자료 제목·부수·위치를 자동으로 인식해 엑셀로 정리합니다</p>
+  </div>
+</header>
+
+<main>
+
+  <!-- API 키 카드 -->
+  <div class="card">
+    <div class="card-title">🔑 Anthropic API 키</div>
+    <div class="api-key-row">
+      <input type="password" id="apiKeyInput" placeholder="sk-ant-api03-..." autocomplete="off" oninput="onKeyInput()">
+      <span class="key-status none" id="keyStatus">⚠ 키 없음</span>
+    </div>
+    <div class="api-key-hint">
+      API 키는 이 브라우저에만 저장되며 외부로 전송되지 않습니다.<br>
+      키가 없으시면 <a href="https://console.anthropic.com/settings/keys" target="_blank">console.anthropic.com</a> 에서 발급받으세요.
+    </div>
+  </div>
+
+  <!-- 업로드 카드 -->
+  <div class="card">
+    <div class="card-title">📷 사진 업로드</div>
+    <div class="upload-zone" id="uploadZone">
+      <div class="upload-icon">🖼️</div>
+      <div class="upload-text">사진을 여기에 끌어다 놓거나 클릭해서 선택</div>
+      <div class="upload-sub">여러 장 동시 업로드 가능 · JPG, PNG, HEIC</div>
+    </div>
+    <input type="file" id="fileInput" accept="image/*" multiple>
+
+    <div class="preview-grid" id="previewGrid"></div>
+
+    <div class="btn-row">
+      <button class="btn btn-primary" id="analyzeBtn" disabled>🔍 분석 시작</button>
+      <button class="btn btn-outline" id="clearBtn" disabled>🗑️ 초기화</button>
+    </div>
+
+    <div id="progressWrap" style="display:none; margin-top:14px;">
+      <div class="progress-bar-wrap">
+        <div class="progress-bar" id="progressBar" style="width:0%"></div>
+      </div>
+      <div class="progress-label" id="progressLabel">분석 준비 중...</div>
+    </div>
+  </div>
+
+  <!-- 결과 카드 -->
+  <div class="card">
+    <div class="card-title">📋 인식 결과</div>
+    <div class="summary-bar" id="summaryBar" style="display:none">
+      <span id="summaryText"></span>
+      <button class="add-row-btn" onclick="addRow()">+ 행 추가</button>
+    </div>
+    <div class="table-wrap">
+      <table id="resultTable">
+        <thead>
+          <tr>
+            <th style="width:60px">번호</th>
+            <th style="width:100px">위치</th>
+            <th>자료 제목</th>
+            <th style="width:80px">부수</th>
+            <th style="width:50px">삭제</th>
+          </tr>
+        </thead>
+        <tbody id="resultBody">
+          <tr><td colspan="5" class="no-data">사진을 업로드하고 분석을 시작하세요</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="btn-row" style="margin-top:16px;">
+      <button class="btn btn-success" id="excelBtn" disabled onclick="downloadExcel()">📥 엑셀 다운로드</button>
+    </div>
+  </div>
+
+</main>
+
+<script>
+  const uploadZone = document.getElementById('uploadZone');
+  const fileInput = document.getElementById('fileInput');
+  const previewGrid = document.getElementById('previewGrid');
+  const analyzeBtn = document.getElementById('analyzeBtn');
+  const clearBtn = document.getElementById('clearBtn');
+  const progressWrap = document.getElementById('progressWrap');
+  const progressBar = document.getElementById('progressBar');
+  const progressLabel = document.getElementById('progressLabel');
+  const resultBody = document.getElementById('resultBody');
+  const excelBtn = document.getElementById('excelBtn');
+  const summaryBar = document.getElementById('summaryBar');
+  const summaryText = document.getElementById('summaryText');
+  const apiKeyInput = document.getElementById('apiKeyInput');
+  const keyStatus = document.getElementById('keyStatus');
+
+  // 저장된 키 불러오기
+  const savedKey = localStorage.getItem('anthropic_api_key');
+  if (savedKey) { apiKeyInput.value = savedKey; updateKeyStatus(savedKey); }
+
+  function onKeyInput() {
+    const key = apiKeyInput.value.trim();
+    localStorage.setItem('anthropic_api_key', key);
+    updateKeyStatus(key);
+    updateBtns();
+  }
+
+  function updateKeyStatus(key) {
+    if (key && key.startsWith('sk-ant-')) {
+      keyStatus.className = 'key-status ok';
+      keyStatus.textContent = '✓ 키 입력됨';
+    } else {
+      keyStatus.className = 'key-status none';
+      keyStatus.textContent = '⚠ 키 없음';
+    }
+  }
+
+  function getApiKey() {
+    return apiKeyInput.value.trim();
+  }
+
+  let files = [];
+  let allRows = [];
+  let rowId = 0;
+
+  // 드래그 앤 드롭
+  uploadZone.addEventListener('click', () => fileInput.click());
+  uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag-over'); });
+  uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
+  uploadZone.addEventListener('drop', e => {
+    e.preventDefault();
+    uploadZone.classList.remove('drag-over');
+    addFiles([...e.dataTransfer.files]);
+  });
+  fileInput.addEventListener('change', e => addFiles([...e.target.files]));
+
+  function addFiles(newFiles) {
+    newFiles.filter(f => f.type.startsWith('image/')).forEach(f => {
+      if (files.find(x => x.file.name === f.name && x.file.size === f.size)) return;
+      const id = Date.now() + Math.random();
+      files.push({ id, file: f, status: 'pending' });
+      addPreview(id, f);
+    });
+    updateBtns();
+  }
+
+  function addPreview(id, file) {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const div = document.createElement('div');
+      div.className = 'preview-item';
+      div.id = 'prev-' + id;
+      div.innerHTML = `
+        <img src="${e.target.result}">
+        <button class="remove-btn" onclick="removeFile('${id}')">✕</button>
+        <div class="status-badge pending" id="badge-${id}">대기</div>
+      `;
+      previewGrid.appendChild(div);
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function removeFile(id) {
+    files = files.filter(f => f.id != id);
+    const el = document.getElementById('prev-' + id);
+    if (el) el.remove();
+    updateBtns();
+  }
+
+  function updateBtns() {
+    const hasKey = getApiKey().startsWith('sk-ant-');
+    analyzeBtn.disabled = files.length === 0 || !hasKey;
+    clearBtn.disabled = files.length === 0;
+  }
+
+  clearBtn.addEventListener('click', () => {
+    files = [];
+    allRows = [];
+    previewGrid.innerHTML = '';
+    resultBody.innerHTML = '<tr><td colspan="5" class="no-data">사진을 업로드하고 분석을 시작하세요</td></tr>';
+    summaryBar.style.display = 'none';
+    excelBtn.disabled = true;
+    progressWrap.style.display = 'none';
+    updateBtns();
+  });
+
+  analyzeBtn.addEventListener('click', async () => {
+    analyzeBtn.disabled = true;
+    clearBtn.disabled = true;
+    progressWrap.style.display = 'block';
+    allRows = [];
+    resultBody.innerHTML = '';
+    rowId = 0;
+
+    for (let i = 0; i < files.length; i++) {
+      const item = files[i];
+      setStatus(item.id, 'processing', '분석중');
+      setProgress(i, files.length, `(${i+1}/${files.length}) ${item.file.name} 분석 중...`);
+
+      try {
+        const b64 = await toBase64(item.file);
+        const mediaType = item.file.type || 'image/jpeg';
+        const rows = await analyzeImage(b64, mediaType);
+        rows.forEach(r => {
+          allRows.push(r);
+          addTableRow(r);
+        });
+        setStatus(item.id, 'done', '완료');
+      } catch (err) {
+        console.error(err);
+        setStatus(item.id, 'error', '오류');
+        addTableRow({ location: '오류', title: item.file.name + ' 분석 실패: ' + err.message, count: '-' });
+      }
+    }
+
+    setProgress(files.length, files.length, `총 ${allRows.length}건 인식 완료`);
+    summaryBar.style.display = 'flex';
+    summaryText.textContent = `총 ${allRows.length}건의 자료가 인식되었습니다. 직접 수정도 가능합니다.`;
+    excelBtn.disabled = allRows.length === 0;
+    analyzeBtn.disabled = false;
+    clearBtn.disabled = false;
+  });
+
+  function setProgress(done, total, label) {
+    progressBar.style.width = total > 0 ? (done / total * 100) + '%' : '0%';
+    progressLabel.textContent = label;
+  }
+
+  function setStatus(id, cls, text) {
+    const badge = document.getElementById('badge-' + id);
+    if (badge) {
+      badge.className = 'status-badge ' + cls;
+      badge.textContent = text;
+    }
+  }
+
+  function toBase64(file) {
+    return new Promise((res, rej) => {
+      const reader = new FileReader();
+      reader.onload = () => res(reader.result.split(',')[1]);
+      reader.onerror = rej;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function analyzeImage(b64, mediaType) {
+    const prompt = `이 이미지는 자료실 책장 사진입니다.
+
+책장에 꽂혀 있는 자료(도서, 보고서, 바인더 등)를 모두 파악하여 아래 JSON 형식으로 반환해 주세요.
+
+규칙:
+1. 각 자료의 위치(책장 라벨, 예: "우7-3", "좌2-2"), 제목, 부수를 추출합니다.
+2. 위치 라벨이 사진에 보이면 반드시 포함합니다.
+3. 동일 제목이 여러 권 꽂혀 있으면 부수를 세어 기입합니다.
+4. 제목이 세로로 적혀 있어도 최대한 읽어서 기입합니다.
+5. 읽기 어려운 경우 "판독불가" 또는 부분 제목을 기입합니다.
+6. 반드시 JSON 배열만 반환하고 다른 텍스트는 쓰지 마세요.
+
+형식:
+[
+  {"location": "우7-3", "title": "자료 제목", "count": 5},
+  ...
+]`;
+
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': getApiKey(),
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 1000,
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'image', source: { type: 'base64', media_type: mediaType, data: b64 } },
+            { type: 'text', text: prompt }
+          ]
+        }]
+      })
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error?.message || `API 오류 ${res.status}`);
+    }
+
+    const data = await res.json();
+    const text = (data.content || []).map(c => c.text || '').join('');
+    const clean = text.replace(/```json|```/g, '').trim();
+    const parsed = JSON.parse(clean);
+    return parsed.map(r => ({
+      location: r.location || '',
+      title: r.title || '',
+      count: r.count != null ? String(r.count) : ''
+    }));
+  }
+
+  function addTableRow(r, prepend = false) {
+    const id = ++rowId;
+    const tr = document.createElement('tr');
+    tr.id = 'row-' + id;
+    tr.innerHTML = `
+      <td style="text-align:center; color: var(--text-sub); font-size:12px;">${id}</td>
+      <td><span class="tag tag-loc" contenteditable="true" style="display:inline-block;outline:none;cursor:text;">${esc(r.location)}</span></td>
+      <td><input value="${esc(r.title)}" placeholder="자료 제목"></td>
+      <td><input value="${esc(r.count)}" placeholder="0" style="text-align:center;"></td>
+      <td class="del-cell"><button onclick="deleteRow(${id})" title="삭제">✕</button></td>
+    `;
+    resultBody.appendChild(tr);
+  }
+
+  function deleteRow(id) {
+    const tr = document.getElementById('row-' + id);
+    if (tr) tr.remove();
+  }
+
+  function addRow() {
+    addTableRow({ location: '', title: '', count: '' });
+  }
+
+  function esc(str) {
+    return (str || '').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  function getTableData() {
+    const rows = [];
+    resultBody.querySelectorAll('tr').forEach(tr => {
+      const inputs = tr.querySelectorAll('input');
+      const locEl = tr.querySelector('.tag-loc');
+      if (!inputs.length) return;
+      rows.push({
+        위치: locEl ? locEl.textContent.trim() : '',
+        자료제목: inputs[0]?.value || '',
+        부수: inputs[1]?.value || ''
+      });
+    });
+    return rows;
+  }
+
+  function downloadExcel() {
+    const data = getTableData();
+    if (!data.length) return;
+
+    const ws = XLSX.utils.json_to_sheet(data, { header: ['위치', '자료제목', '부수'] });
+
+    // 열 너비 설정
+    ws['!cols'] = [{ wch: 12 }, { wch: 60 }, { wch: 8 }];
+
+    // 헤더 스타일
+    ['A1','B1','C1'].forEach(cell => {
+      if (ws[cell]) ws[cell].s = { font: { bold: true } };
+    });
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '자료목록');
+    XLSX.writeFile(wb, '자료실_목록_' + today() + '.xlsx');
+  }
+
+  function today() {
+    const d = new Date();
+    return `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
+  }
+</script>
+</body>
+</html>
